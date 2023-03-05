@@ -1,9 +1,7 @@
 import numpy as np
 
 from sklearn.metrics import make_scorer
-
-
-threshold = 0.5
+import keras.backend as K
 
 
 def home_credit_scoring_fn(y_true, y_pred):
@@ -14,12 +12,30 @@ def home_credit_scoring_fn(y_true, y_pred):
     fn_cost = 10
     fp_cost = 1
 
-    y_pred_binary = (y_pred >= threshold).astype(int)
+    y_pred_binary = (y_pred >= 0.5).astype(int)
 
     fp = ((y_pred_binary == 1) & (y_true == 0)).sum()
     fn = ((y_pred_binary == 0) & (y_true == 1)).sum()
 
     score = (fn * fn_cost + fp * fp_cost) / (fn + fp + 1e-7)  # Prevents zero division
+    return score
+
+
+def home_credit_fn_keras(y_true, y_pred):
+    """
+    Custom scoring function, designed to penalize more false negatives
+    by a factor 10 (default). It can be modified in the fn/fp variables
+    Designed to work with keras
+    """
+    fn_cost = 10
+    fp_cost = 1
+
+    y_pred_binary = K.cast(K.greater_equal(y_pred, 0.5), dtype='float32')
+
+    fp = K.sum(K.cast(K.tf.logical_and(K.equal(y_pred_binary, 1), K.equal(y_true, 0)), dtype='float32'))
+    fn = K.sum(K.cast(K.tf.logical_and(K.equal(y_pred_binary, 0), K.equal(y_true, 1)), dtype='float32'))
+
+    score = (fn * fn_cost + fp * fp_cost) / (fn + fp + K.epsilon())
     return score
 
 
