@@ -9,9 +9,9 @@ threshold = 0.5
 def home_credit_scoring_fn(y_true, y_pred):
     """
     Custom scoring function, designed to penalize more false negatives
-    by a factor 8 (default). It can be modified in the fn/fp variables
+    by a factor 10 (default). It can be modified in the fn/fp variables
     """
-    fn_cost = 8
+    fn_cost = 10
     fp_cost = 1
 
     y_pred_binary = (y_pred >= threshold).astype(int)
@@ -29,7 +29,7 @@ def hc_threshold_score(y_true, y_proba):
     predicted probabilities as input and returns the optimal decision threshold.
     """
     # Define the cost ratio for false negatives and false positives
-    fn_cost = 8
+    fn_cost = 10
     fp_cost = 1
 
     # Calculate the false negative and false positive rates for different thresholds
