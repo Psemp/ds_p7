@@ -1,3 +1,17 @@
+# MLruns stuff :
+
+mlruns/*
+mlartifacts/*
+
+# Mac stuff
+.DS_Store
+
+# Heavy
+data/*
+
+# private :
+private/*
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
