@@ -3,7 +3,9 @@ import mlflow
 import time
 import shap
 import os
+import pickle
 
+import numpy as np
 import seaborn as sns
 
 from matplotlib import pyplot as plt
@@ -74,6 +76,98 @@ def plot_auc_conf(estimator, X_test, y_test, display: bool = False):
     elif display:
         plt.show()
         return auroc, None
+
+
+def plot_auc_conf_keras(model, X_test, y_test, display: bool = False):
+    """
+    Function:
+    Calculates the area under the roc curve, returns always the auroc value and
+    optionnaly the figure containing both the AUROC and the confusion matrix.
+    Specific to Keras (although similar to the ensemble estimator, it might be preferable to keep
+    the two functions as separate)
+
+    Args:
+    - model : a TensorFlow model object
+    - X_test : test data matrix
+    - y_test : test labels
+    - display : bool, displays or not the figure (false : return plt.gcf())
+
+    Returns:
+    - auroc : area under the roc curve
+    - None or plt.gcf()
+    """
+
+    plt.ioff()
+    fig, (ax1, ax2) = plt.subplots(ncols=2, figsize=(8, 4), dpi=150)
+
+    y_pred_proba = model.predict(X_test)
+
+    fpr, tpr, _ = roc_curve(y_test, y_pred_proba)
+    auroc = auc(fpr, tpr)
+
+    ax1.plot(fpr, tpr, color="#000331", lw=1.5, label=f"ROC curve (AUC = {auroc})")
+    ax1.plot([0, 1], [0, 1], color="navy", lw=1, linestyle=":")
+
+    # CONF
+    y_pred_binary = (y_pred_proba >= 0.5).astype(int)
+    cm = confusion_matrix(y_test, y_pred_binary)
+    sns.heatmap(cm, annot=True, cmap="Blues", fmt="d", ax=ax2)
+
+    ###
+    # Titles/Lables
+    ax1.set_xlabel("False Positive Rate")
+    ax1.set_ylabel("True Positive Rate")
+    ax1.set_title("ROC Curve")
+    ax1.legend(loc="lower right")
+
+    ax2.set_xlabel("Predicted")
+    ax2.set_ylabel("True")
+    ax2.set_title("Confusion Matrix")
+    #
+    ###
+
+    if not display:
+        fig = plt.gcf()
+        plt.close()
+        return auroc, fig
+    elif display:
+        plt.show()
+        return auroc, None
+
+
+def plot_epochs(history):
+    fig, (ax1, ax2) = plt.subplots(
+        ncols=2,
+        figsize=(8, 4),
+        dpi=150
+        )
+
+    plt.ioff()
+
+    training_recall = history.history["recall"]
+    validation_recall = history.history["val_recall"]
+    training_loss = history.history["loss"]
+    validation_loss = history.history["val_loss"]
+
+    ax1.plot(training_recall, label="training recall")
+    ax1.plot(validation_recall, label="validation recall")
+
+    ax2.plot(training_loss, label="training loss")
+    ax2.plot(validation_loss, label="validation loss")
+
+    ###
+    # Titles/Lables
+    ax1.legend()
+    ax1.set_xlabel("Epochs")
+    ax1.set_ylabel("Recall")
+    ax2.legend()
+    ax2.set_xlabel("Epochs")
+    ax2.set_ylabel("Loss")
+    fig.suptitle("Evolution of Training and Validation accuracy per epoch")
+    #
+    ###
+
+    return plt.gcf()
 
 
 def describe_run(
@@ -162,6 +256,69 @@ def get_shap_summary(clf, X_train):
     summary_fig.tight_layout()
     summary_fig.suptitle("Blue -> Red = Low -> High")
     return summary_fig
+
+
+def get_shap_summary_keras(model, X_train, X_test, display: bool = None):
+    """
+    Takes a tf classifier DNN  and the X_train and X_test of the classifier,
+    returns the summary plots of shap values ranked by absolute importance (lim 20).
+    Since it takes quite a long time to compute, returns the shap_values to use with
+    waterfall or other.
+
+    Args:
+    - model, a tensorflow dnn
+    - X_train, the data used to train the clf
+
+    Returns :
+    - shap summary matplotlib figure (or none if display)
+    - shap_values : the shap explainer of the values to use in waterfall for local use
+    """
+
+    # bg dataset
+    background = X_train.sample(n=2500, random_state=123)
+
+    explainer = shap.DeepExplainer(model, background.values)
+    shap_values = explainer.shap_values(X_test.values)
+    # Shap mean values :
+    mean_shap_values = np.mean(shap_values[0], axis=0)
+
+    # Ranking the values by absolute value (thanks numpy)
+    sorted_idx = np.argsort(np.abs(mean_shap_values))[::-1]
+    sorted_features = X_train.columns[sorted_idx]
+    sorted_shap_values = mean_shap_values[sorted_idx]
+
+    plt.ioff()
+
+    fig, ax1 = plt.subplots(
+        figsize=(8, 8),
+        dpi=155
+        )
+
+    colors = ["grey" if val < 0 else "#000331" for val in mean_shap_values]
+
+    ax1.barh(
+        sorted_features[:20],
+        sorted_shap_values[:20],
+        align="center",
+        color=colors
+        )
+
+    ###
+    # Titles/Lables
+    ax1.set_ylim(-1, len(X_train.columns[:20]))
+    ax1.set_xlabel("SHAP Value, impact on model")
+    ax1.set_ylabel("Feature name")
+    ax1.set_title("Global DNN Feature Importance")
+    ax1.invert_yaxis()  # Most important at the top
+    #
+    ###
+
+    if display:
+        plt.show()
+        return shap_values
+    elif not display:
+        summary_fig = plt.gcf()
+        return summary_fig, shap_values
 
 
 def train_and_log(
@@ -262,3 +419,117 @@ def train_and_log(
         mlflow.register_model(model_uri=model_uri, name=model_name)
 
         return metrics, classifier
+
+
+def train_and_log_keras(
+        model, X_train, X_test, y_train, y_test, model_summary, training_time: float,
+        history, home_credit_score, feature_list, model_name="dnn_classifier",
+        dataset_version="default", imb_method="None", na_thresh=0,
+        ):
+    """
+    Trains and predict the model based on X_train/test and y_train/test + classifier (keras DNN)
+    Logs the model name (default is dnn_classifier) using mlflow as well as the params and
+    the metrics (accuracy, f1, recall) using mlflow. Handles description creation with json template
+
+    Args :
+    - model : keras model, fitted
+    - X_train : the training data
+    - X_test : the test data
+    - y_train : the training labels
+    - y_test : the test labels
+    - training_time : the time to train the model
+    - model_name : default = classifier, the name of the model as will appear on mlflow's logs
+    - dataset_version : default = default, the version of the dataset
+    - imb_method : default = None, the class imbalance method used
+    - na_thresh : default = 0, float between 0 and 1, informs that variables
+    containing more than this thresh have been dropped
+    - feature list : the list of features used by the model
+
+    Returns :
+    - metrics : dictionnary of the evaluated metrics
+    - model : the classifier fitted on X_train/y_train and params
+    """
+
+    mlflow.set_tracking_uri(os.getenv("MLFLOW_TRACKING_URI"))
+
+    description = describe_run(
+        template_path="../templates/description_mlflow.json",
+        model_name=model_name,
+        data_version=dataset_version,
+        imb_learn_method=imb_method,
+        column_drop_na_threshold=na_thresh,
+        )
+
+    with mlflow.start_run(run_name=model_name, description=description):
+
+        # Metrics :
+        y_pred = np.round(model.predict(X_test))
+
+        home_credit_score = home_credit_score
+        accuracy = accuracy_score(y_test, y_pred)
+        f1 = f1_score(y_test, y_pred, average="macro")
+        recall = recall_score(y_test, y_pred, average="macro")
+        auroc, auroc_conf_fig = plot_auc_conf_keras(model=model, X_test=X_test, y_test=y_test, display=False)
+
+        metrics = {
+            "home_credit_score": home_credit_score, "accuracy": accuracy,
+            "f1": f1, "recall": recall, "auroc": auroc
+            }
+
+        # MLFlow log :
+        mlflow.log_metrics(metrics)
+
+        with open("model_summary.txt", "w") as f:
+            f.write(model_summary)
+
+        # log model summary file as an artifact in MLFlow
+
+        serialized_list = pickle.dumps(feature_list)
+        with open("feature_list.pkl", "wb") as f:
+            f.write(serialized_list)
+
+        mlflow.log_artifact("feature_list.pkl")
+        mlflow.log_artifact("model_summary.txt")
+
+        mlflow.log_figure(auroc_conf_fig, "AUROC_Conf_matrix.png")
+
+        epoch_fig = plot_epochs(history=history)
+
+        mlflow.log_figure(epoch_fig, "epoch_eval_fig.png")
+
+        # waterfall = get_shap_waterfall(clf=classifier, X_train=X_train)
+        # mlflow.log_figure(waterfall, "waterfall_shap.png")
+
+        summary_fig, shap_values = get_shap_summary_keras(
+            model=model, X_train=X_train,
+            X_test=X_test,
+            display=False
+            )
+
+        summary_fig.tight_layout()
+
+        mlflow.log_figure(summary_fig, "summary_shap.png")
+
+        model_type = type(model)
+
+        if model_type.__module__.startswith("keras"):
+            artifact_path = "keras-model"
+            mlflow.tensorflow.log_model(model=model, artifact_path=artifact_path, registered_model_name=model_name)
+
+        else:
+            pass
+
+        run_id = mlflow.active_run().info.run_id
+
+        model_uri = f"runs:/{run_id}/{artifact_path}"
+        shap_file = "shap_values.npy"
+
+        np.save(shap_file, shap_values)
+
+        mlflow.log_artifact(shap_file, artifact_path="shap_values")
+
+        mlflow.log_param(key="processing time", value=training_time)
+
+        mlflow.register_model(model_uri=model_uri, name=model_name)
+
+        return metrics, model
