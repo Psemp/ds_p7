@@ -10,10 +10,10 @@ import seaborn as sns
 
 from matplotlib import pyplot as plt
 from dotenv import load_dotenv
-from sklearn.metrics import auc, roc_curve, confusion_matrix
+from sklearn.metrics import auc, roc_curve, confusion_matrix, make_scorer
 from sklearn.metrics import accuracy_score, f1_score, recall_score
 
-from models.scorer import home_credit_scorer
+from models.scorer import home_credit_scoring_fn
 from scripts.patch_shap import patched_beeswarm
 
 load_dotenv()
@@ -322,7 +322,7 @@ def get_shap_summary_keras(model, X_train, X_test, display: bool = None):
 
 
 def train_and_log(
-        estimator, X_train, X_test, y_train, y_test, model_name="classifier",
+        estimator, X_train, X_test, y_train, y_test, score_threshold, model_name="classifier",
         dataset_version="default", imb_method="None", na_thresh=0, params: dict = None,
         ):
     """
@@ -336,8 +336,8 @@ def train_and_log(
     - X_test : the test data
     - y_train : the training labels
     - y_test : the test labels
+    - score_threshold : the threshold to apply to the scoring fn, determined by crossvalidation
     - model_name : default = classifier, the name of the model as will appear on mlflow's logs
-    - id_dict : dictionnary of ids to log as train/test split for replication, optionnal
     - dataset_version : default = default, the version of the dataset
     - imb_method : default = None, the class imbalance method used
     - na_thresh : default = 0, float between 0 and 1, informs that variables
@@ -362,7 +362,9 @@ def train_and_log(
     with mlflow.start_run(run_name=model_name, description=description):
         start = time.perf_counter()
         mlflow.log_params(params)
+        mlflow.log_params(params={"score_threshold": score_threshold})
 
+        home_credit_scorer = make_scorer(home_credit_scoring_fn, threshold=score_threshold)
         if estimator.__module__.startswith("xgboost"):
             classifier = estimator(**params, eval_metric=home_credit_scorer)
         elif estimator.__module__.startswith("lightgbm") or \

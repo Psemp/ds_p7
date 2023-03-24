@@ -1,0 +1,5 @@
+https://www.kaggle.com/code/jsaguiar/lightgbm-with-simple-features/script
+https://www.mlflow.org/docs/latest/index.html
+https://keras.io/api/utils/backend_utils/
+https://hyperopt.github.io/hyperopt/
+https://github.com/evidentlyai/evidently/blob/main/examples/sample_notebooks/getting_started_tutorial.ipynb (code uses default preset)
