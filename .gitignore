@@ -8,7 +8,17 @@ mlartifacts/*
 
 # Heavy
 data/*
-
+notebooks/catboost_info/*
+notebooks/nb_test_2_mlflow.ipynb
+notebooks/nb_test_makedataset.ipynb
+notebooks/feature_list.pkl
+notebooks/model_summary.txt
+notebooks/shap_values.npy
+notebooks/nb_test_makedataset.ipynb
+notebooks/catboost_info
+notebooks/feature_list.pkl
+notebooks/model_summary.txt
+notebooks/shap_values.npy
 # private :
 private/*
 
